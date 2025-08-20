@@ -13,6 +13,7 @@
 #include "TFile.h"
 #include "TH1.h"
 #include "TH2.h"
+#include "TTree.h"
 #include "TDirectory.h"
 #include "TGraph.h"
 #include "TMultiGraph.h"
@@ -26,6 +27,7 @@ static const uint32_t SLOTMIN      = 1;
 static const uint32_t NUMSLOTS     = 22;
 static const uint32_t NADCCHAN     = 16;
 static const uint32_t NUMRAWEVENTS = 1000;
+static const uint32_t NUMSAMPLE    = 100;
 static const uint32_t NPED         = 4;
 static const uint32_t NPEAK        = 4;
 
@@ -37,6 +39,8 @@ TDirectory *mode_dir, *slot_dir[NUMSLOTS], *chan_dir[NADCCHAN], *raw_samples_dir
 TDirectory *raw_samples_npeak_dir[NADCCHAN][NPEAK];
 TH1I *h_pinteg[NUMSLOTS][NADCCHAN], *h_ptime[NUMSLOTS][NADCCHAN], *h_pped[NUMSLOTS][NADCCHAN], *h_ppeak[NUMSLOTS][NADCCHAN];
 TH2I *h2_pinteg[NUMSLOTS], *h2_ptime[NUMSLOTS], *h2_pped[NUMSLOTS], *h2_ppeak[NUMSLOTS];
+TTree *t_store[NUMSLOTS];
+UInt_t store_event, store_channel, store_sample[NUMSAMPLE];
 TGraph *g_psamp_event[NUMSLOTS][NADCCHAN][NUMRAWEVENTS];
 TGraph *g_psamp_npeak_event[NUMSLOTS][NADCCHAN][NPEAK][NUMRAWEVENTS];
 TCanvas *c_psamp[NUMSLOTS][NADCCHAN], *c_psamp_npeak[NUMSLOTS][NADCCHAN][NPEAK];
@@ -78,6 +82,13 @@ void GeneratePlots(Int_t mode, uint32_t islot, uint32_t chan) {
       h2_ppeak[islot] = new TH2I("h2_ppeak", Form(
         "FADC Mode %d Pulse Peak Data Slot %u; Channel Number; FADC Units (Channels)", mode, islot), 16, -0.5, 15.5,
                                  4096, 0, 4095);
+  }
+  // TTree
+  if (!t_store[islot]) {
+    t_store[islot] = new TTree("waveform", "Wave form data");
+    t_store[islot]->Branch("event", &store_event, "event/i");
+    t_store[islot]->Branch("channel", &store_channel, "channel/i");
+    t_store[islot]->Branch("sample", store_sample, Form("sample[%d]/i",NUMSAMPLE));
   }
   // Channel directory
   chan_dir[chan] = dynamic_cast <TDirectory*> (slot_dir[islot]->Get(Form("chan_%u", chan)));
@@ -199,12 +210,12 @@ int main(int /* argc */, char** /* argv */)
       cout << "\nAll Events in Run " << runNumber << " Will be Analyzed" << endl;
   }
   if (spectrometer == "") {
-    cout << "\nEnter the Spectrometer Name (hms or shms): ";
+    cout << "\nEnter the Spectrometer Name (<run_name>, hms or shms): ";
     cin >> spectrometer;
-    if (spectrometer != "hms" && spectrometer != "shms") {
-      cerr << "...Invalid entry\n"; 
-      return 1;
-    }
+    //if (spectrometer != "hms" && spectrometer != "shms") {
+    //  cerr << "...Invalid entry\n"; 
+    //  return 1;
+    //}
   }
   if (crateNumber == 0) {
     cout << "\nEnter the Crate Number to be Analyzed: ";
@@ -217,14 +228,14 @@ int main(int /* argc */, char** /* argv */)
 
   // Create file name patterns
   if (fileLocation == "raw")
-    runFile = fileLocation+"/";
+    runFile = fileLocation+"/"+Form("%s_%d.evio.0", spectrometer.Data(), runNumber);
   if (fileLocation == "cache")
-    runFile = fileLocation+"/";
+    runFile = fileLocation+"/"+Form("%s_%d.evio.0", spectrometer.Data(), runNumber);
   if (spectrometer == "hms")
-    runFile += Form("hms_all_%05d.dat", runNumber);
+    runFile = fileLocation+"/"+Form("hms_all_%05d.dat", runNumber);
   if (spectrometer == "shms")
-    runFile += Form("shms_all_%05d.dat", runNumber);
-  rootFile = Form("ROOTfiles/raw_fadc_%d.root", runNumber);
+    runFile = fileLocation+"/"+Form("shms_all_%05d.dat", runNumber);
+  rootFile = Form("Rootfiles/fadc_data_%d.root", runNumber);
 
   // Initialize raw samples index array
   memset(raw_samp_index, 0, sizeof(raw_samp_index));
@@ -257,7 +268,7 @@ int main(int /* argc */, char** /* argv */)
 
   // Initialize root and output
   TROOT fadcana("tstfadcroot", "Hall C analysis");
-  hfile = new TFile("fadc_data.root", "RECREATE", "fadc module data");
+  hfile = new TFile(rootFile, "RECREATE", "fadc module data");
 
   // Set the number of event to be analyzed
   uint32_t iievent = (maxEvent == -1) ? 1 : maxEvent;
@@ -337,6 +348,15 @@ int main(int /* argc */, char** /* argv */)
                     if (debugfile) *debugfile << "NUM FADC SAMPLES = " << num_fadc_samples << endl;
                     // Acquire the raw samples vector and populate graphs
                     raw_samples_vector[islot][chan] = fadc->GetPulseSamplesVector(chan);
+                    // Store wave forms to TTree
+                    store_event = ievent;
+                    store_channel = chan;
+                    for (uint32_t sample_num = 0; sample_num < NUMSAMPLE; sample_num++)
+                      store_sample[sample_num] = 0;
+                    for (uint32_t sample_num = 0; sample_num < raw_samples_vector[islot][chan].size(); sample_num++)
+                      if (sample_num < NUMSAMPLE)
+                        store_sample[sample_num] = raw_samples_vector[islot][chan][sample_num];
+                    t_store[islot]->Fill();
                     for (uint32_t ipeak = 0; ipeak < NPEAK; ipeak++) {
                       if (uint32_t (num_fadc_events) == ipeak+1)
                         raw_samples_npeak_vector[islot][chan][ipeak] = fadc->GetPulseSamplesVector(chan);

@@ -23,6 +23,7 @@ if(ONLINE_ET)
   list(APPEND allexe etclient tstcoda)
 endif()
 
+find_package(Podd REQUIRED)
 
 foreach(exe IN LISTS allexe)
   target_link_libraries(${exe}
