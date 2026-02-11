@@ -41,6 +41,7 @@ TH1I *h_pinteg[NUMSLOTS][NADCCHAN], *h_ptime[NUMSLOTS][NADCCHAN], *h_pped[NUMSLO
 TH2I *h2_pinteg[NUMSLOTS], *h2_ptime[NUMSLOTS], *h2_pped[NUMSLOTS], *h2_ppeak[NUMSLOTS];
 TTree *t_store[NUMSLOTS];
 UInt_t store_event, store_channel, store_sample[NUMSAMPLE];
+UInt_t store_pinteg[4], store_ptime[4], store_pped[4], store_ppeak[4];
 TGraph *g_psamp_event[NUMSLOTS][NADCCHAN][NUMRAWEVENTS];
 TGraph *g_psamp_npeak_event[NUMSLOTS][NADCCHAN][NPEAK][NUMRAWEVENTS];
 TCanvas *c_psamp[NUMSLOTS][NADCCHAN], *c_psamp_npeak[NUMSLOTS][NADCCHAN][NPEAK];
@@ -89,6 +90,10 @@ void GeneratePlots(Int_t mode, uint32_t islot, uint32_t chan) {
     t_store[islot]->Branch("event", &store_event, "event/i");
     t_store[islot]->Branch("channel", &store_channel, "channel/i");
     t_store[islot]->Branch("sample", store_sample, Form("sample[%d]/i",NUMSAMPLE));
+    t_store[islot]->Branch("pinteg", store_pinteg, "pinteg[4]/i");
+    t_store[islot]->Branch("ptime", store_ptime, "ptime[4]/i");
+    t_store[islot]->Branch("pped", store_pped, "pped[4]/i");
+    t_store[islot]->Branch("ppeak", store_ppeak, "ppeak[4]/i");
   }
   // Channel directory
   chan_dir[chan] = dynamic_cast <TDirectory*> (slot_dir[islot]->Get(Form("chan_%u", chan)));
@@ -292,6 +297,18 @@ int main(int /* argc */, char** /* argv */)
             //fadc->CheckDecoderStatus();
             // Loop over channels
             for (uint32_t chan = 0; chan < NADCCHAN; chan++) {
+              store_event = ievent;
+              store_channel = chan;
+              // Initialize storage array for raw samples to be saved to TTree
+              for (uint32_t sample_num = 0; sample_num < NUMSAMPLE; sample_num++)
+                store_sample[sample_num] = 0;
+              // Initialize storage arrays for up to 4 events (for modes with multiple events per channel) to be saved to TTree
+              for (UInt_t jevent = 0; jevent < 4; jevent++) {
+                store_pinteg[jevent] = 0;
+                store_ptime[jevent] = 0;
+                store_pped[jevent] = 0;
+                store_ppeak[jevent] = 0;
+              }
               // Acquire the FADC mode
               Int_t fadc_mode = fadc->GetFadcMode(); fadc_mode_const = fadc_mode;
               if (debugfile) *debugfile << "Channel " << chan << " is in FADC Mode " << fadc_mode << endl;
@@ -332,6 +349,13 @@ int main(int /* argc */, char** /* argv */)
                     h_ptime[islot][chan]->Fill(fadc->GetPulseTimeData(chan, jevent));
                     h_pped[islot][chan]->Fill(fadc->GetPulsePedestalData(chan, jevent) / NPED);
                     h_ppeak[islot][chan]->Fill(fadc->GetPulsePeakData(chan, jevent));
+                    // Store data to be saved to TTree (up to 4 events per channel)
+                    if (jevent < 4) {
+                      store_pinteg[jevent] = (fadc_mode != 8) ? fadc->GetPulseIntegralData(chan, jevent) : fadc->GetEmulatedPulseIntegralData(chan);
+                      store_ptime[jevent] = fadc->GetPulseTimeData(chan, jevent);
+                      store_pped[jevent] = fadc->GetPulsePedestalData(chan, jevent) / NPED;
+                      store_ppeak[jevent] = fadc->GetPulsePeakData(chan, jevent);
+                    }
                     // 2D Histos
                     if (fadc_mode != 8) {
                       h2_pinteg[islot]->Fill(chan, fadc->GetPulseIntegralData(chan, jevent));
@@ -349,14 +373,9 @@ int main(int /* argc */, char** /* argv */)
                     // Acquire the raw samples vector and populate graphs
                     raw_samples_vector[islot][chan] = fadc->GetPulseSamplesVector(chan);
                     // Store wave forms to TTree
-                    store_event = ievent;
-                    store_channel = chan;
-                    for (uint32_t sample_num = 0; sample_num < NUMSAMPLE; sample_num++)
-                      store_sample[sample_num] = 0;
                     for (uint32_t sample_num = 0; sample_num < raw_samples_vector[islot][chan].size(); sample_num++)
                       if (sample_num < NUMSAMPLE)
                         store_sample[sample_num] = raw_samples_vector[islot][chan][sample_num];
-                    t_store[islot]->Fill();
                     for (uint32_t ipeak = 0; ipeak < NPEAK; ipeak++) {
                       if (uint32_t (num_fadc_events) == ipeak+1)
                         raw_samples_npeak_vector[islot][chan][ipeak] = fadc->GetPulseSamplesVector(chan);
@@ -385,6 +404,7 @@ int main(int /* argc */, char** /* argv */)
                     } // npeak loop
                   } // Raw mode condition
                 } // FADC event loop
+                t_store[islot]->Fill();
               } // Number of FADC events condition
             } // FADC channel loop
           } // FADC module found condition

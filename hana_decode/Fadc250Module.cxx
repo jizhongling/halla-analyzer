@@ -650,11 +650,11 @@ UInt_t Fadc250Module::GetNumFadcSamples( UInt_t chan, UInt_t ievent ) const
   Int_t mode = GetFadcMode();
   if( (mode == 1) || (mode == 8) || (mode == 10) ) {
     vsiz_t nsamples = fPulseData[chan].samples.size();
-    if( ievent >= nsamples ) {
-      cout << "ERROR:: Fadc250Module:: GetNumFadcSamples:: invalid event number for slot = " << fSlot << ", channel = "
-           << chan << endl;
-      return kMaxUInt;
-    }
+    //if( ievent >= nsamples ) {
+    //  cout << "ERROR:: Fadc250Module:: GetNumFadcSamples:: invalid event number for slot = " << fSlot << ", channel = "
+    //       << chan << endl;
+    //  return kMaxUInt;
+    //}
     if( nsamples == 0 ) {
       //cout << "ERROR:: Fadc250Module:: GetNumFadcSamples:: data vector empty for slot = " << fSlot << ", channel = " << chan << endl;
       return kMaxUInt;
